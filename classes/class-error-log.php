@@ -70,17 +70,5 @@ class CRONICLE_Error_Logs {
     /**
      * Delete all the sent errors
      */
-    public static function clear_all_sent() {
-        global $wpdb;
-        $log_lifespan = CRONICLE::get_log_lifespan();
-        $expire_time = strtotime( '-' . $log_lifespan . ' seconds' );
-        $email_address = cronicle_get_email_address();
-        if ( !empty( $email_address ) ) {
-            $where = "( sent_date IS NOT NULL ) and ( sent_date <= FROM_UNIXTIME( " . $expire_time . " ) )";
-        }
-        else {
-            $where = "( cron_key < $expire_time )";
-        }
-        $wpdb->query( "delete from wp_cronicle_error_logs where " . $where );
-    }
+
 }

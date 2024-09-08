@@ -1,10 +1,6 @@
 <?php
 class CRONICLE {
 
-    public $crons;
-
-
-
 
     /**
      * Log the time for the start of the hook.
@@ -26,7 +22,7 @@ class CRONICLE {
     private static function _log( $hook_name, $key = 'start', $with_time = true, $result = null ) {
         global $cronicle_doing_cron_key, $wpdb;
         $hook_name =  sanitize_key( $hook_name );
-        $log_lifespan = self::get_log_lifespan();
+      
         if ( $key == 'start' ) {
             $params = array( 
                     'cron_key'  => $cronicle_doing_cron_key, 
@@ -77,43 +73,7 @@ class CRONICLE {
             );
         }
 
-        if ( $key !== 'start' && $log_lifespan === 0 ) {
-            // ending, and also don't keep the log
-            $wpdb->delete( 'wp_cronicle_logs', array( 'id' => $log_id ) );
-        }
+
     }
-
-
-
-    /**
-     * Return log lifespan setting taking account free vs premium and other things.
-     */
-    public static function get_log_lifespan() {
-        $log_lifespan = cronicle_option( 'log_lifespan', CRONICLE_DEFAULT_LOG_LIFESPAN );
-        if ( CRONICLE_ENABLE_MONITORING === false ) {
-            $log_lifespan = 0;
-        }
-
-        return $log_lifespan;
-    }
-
-
-
-
-
-
- 
-
-
-
-
-
-
-
-
-
-
-
-
 
 }

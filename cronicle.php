@@ -28,8 +28,7 @@ require_once CRONICLE_DIR . '/views/options-page.php';
 register_activation_hook( CRONICLE_PLUGIN, 'cronicle_activation' );
 register_deactivation_hook( CRONICLE_PLUGIN, 'cronicle_deactivation' );
 
-add_action( 'cronicle_clean_up',  'cleanup'  );
-add_action( 'cronicle_email_notice_hook', 'notify_user' );
+
 
 if ( !defined( 'DOING_CRON' ) || !DOING_CRON ) {
     add_action( 'init', 'check_cron_completion'  );
@@ -44,61 +43,7 @@ if ( !defined( 'DOING_CRON' ) || !DOING_CRON ) {
         return '';
    
 }
-    /**
-     * Delete all cron logs that haven't run in more than a week.
-     */
-     function cleanup() {
-        global $wpdb;
-        $log_lifespan = CRONICLE::get_log_lifespan();
-        $expire_time = strtotime( '-' . $log_lifespan . ' seconds' );
-        $join = get_limits_query( true );
-        $where = " or ( ( l.cron_key is null ) and err.cron_key is null )";
-
-            $join = '';
-            $where = '';
-
-        $wpdb->query( "
-            delete t.* from wp_cronicle_logs as t
-            " . $join . "
-            left outer join ( select distinct cron_key from wp_cronicle_error_logs ) as err
-              on ( err.cron_key = t.cron_key )
-            where ( ( t.cron_key < $expire_time ) and ( err.cron_key is null ) )
-            " . $where . "
-        " );
-
-            if ( intval( $log_lifespan ) >= 604800 ) {
-                $time_last_week = strtotime( '-1 week' );
-                // get old crons
-                $results = $wpdb->get_results( "
-                    select last_run.hook_name 
-                    from (
-                        select hook_name, max( cron_key ) as max_cron_key
-                        from wp_cronicle_logs
-                        group by hook_name
-                    ) as last_run
-                    where ( last_run.max_cron_key < $time_last_week ) ", ARRAY_A);
-
-                if ( empty( $results ) ) {
-                    return;
-                }
-
-                $crons = get_cron_tasks();
-                $hooks = array_column( $crons, 'hook' );
-                $to_delete = array();
-                foreach ( $results as $row ) {
-                    if ( in_array( $row['hook_name'], $hooks ) ) {
-                        continue;
-                    }
-                    $to_delete[] = sanitize_key( $row['hook_name'] );
-                }
-                if ( !empty( $to_delete ) ) {
-                    $wpdb->query( "delete from wp_cronicle_logs where hook_name IN ('" . implode("', '", $to_delete ) . "')" );
-                }
-            }
-        
-        CRONICLE_Error_Logs::clear_all_sent();
-    }
-
+ 
 
 
 
@@ -201,53 +146,6 @@ if ( !defined( 'DOING_CRON' ) || !DOING_CRON ) {
 
 
 
-    /**
-     * Email the user if the results for the general WP Cron system is bad
-     */
-     function notify_user() {
-        $errors = CRONICLE_Error_Logs::get_errors();
-        if ( empty( $errors ) ) {
-            return;
-        }
-
-        $email_address = cronicle_get_email_address();
-        if ( empty( $email_address ) ) {
-            return;
-        }
-        $time_in_minutes = 300 / 60;
-        $minutes = sprintf( _n( '%s minute', '%s minutes', $time_in_minutes, 'cronicle' ), $time_in_minutes );
-
-        $msg = '<p>';
-        $msg .= __( 'WP-Cron started but failed to complete.  Normally a failure here or there is not something to be concerned about.  You may want to look into the failures if they happen fairly consistently.' );
-        $msg .= '</p><p>';
-        $msg .= sprintf( __( 'The reason for a failed cron could be one of many factors.  It could indicate a coding error due to a plugin or conflict of plugins, it could indicate your server ran out of resources, or it could just mean the event did not finish within %s' ), $minutes );
-        $msg .= '</p>';
-
-        $msg .= '<p>' . sprintf( __( 'The following hooks failed to complete.  This can also be seen in the Tools -> WP Cron Status page on %s' ), site_url() ) . '</p>';
-        $msg .= '<ul>';
-        foreach ( $errors as $cron_key => $hook_names ) {
-            $time = round( $cron_key );
-            $msg .= '<li>' . date_i18n( 'm/d/Y h:ia', utc_to_blogtime( $time ) );
-            $msg .= '<ul>';
-            foreach ( $hook_names as $hook_name ) {
-                if ( $hook_name == 'cronicle_wp_cron' ) {
-                    continue;
-                }
-                $msg .= '<li>' . esc_html( $hook_name ) . '</li>';
-            }
-            $msg .= '</ul></li>';
-        }
-        $msg .= '</ul>';
-
-        $msg .= sprintf( __( '<p>This message has been sent from %s by the WP-Cron Status Checker plugin.  You can change the email address in your WordPress admin section under Settings -> WP Cron Status.</p>', 'cronicle' ), site_url() );
-        $headers = array(' Content-Type: text/html; charset=UTF-8' );
-
-        wp_mail( $email_address, 
-            get_bloginfo( 'name' ) . ' - ' . __( 'WP-Cron Failed to Complete!', 'cronicle' ),
-            $msg,
-            $headers );
-        CRONICLE_Error_Logs::mark_errors_sent( array_keys( $errors ) );
-    }
 
 
 
@@ -342,10 +240,9 @@ function cronicle_activation( $network_wide )
         $time = $datetime->format( 'U' );
     } catch ( Exception $e ) {
     }
-    if ( !wp_next_scheduled( 'cronicle_clean_up' ) ) {
-        wp_schedule_event( $time, 'twicedaily', 'cronicle_clean_up' );
-    }
-    schedule_email_notice_hook();
+
+    
+    
 }
 
 /**
@@ -420,34 +317,12 @@ add_filter( 'wpmu_drop_tables', 'cronicle_on_delete_blog' );
  */
 function cronicle_deactivation()
 {
-    wp_clear_scheduled_hook( 'cronicle_clean_up' );
-    unschedule_email_notice_hook();
+    
+    
 }
 
 
-    /**
-     * Schedule the email notice event.
-     */
-    function schedule_email_notice_hook() {
-        if (! wp_next_scheduled ( 'cronicle_email_notice_hook' )) {
-            wp_schedule_event( time(), 'cronicle_email_interval', 'cronicle_email_notice_hook' );
-        }
-    }
 
-    /**
-     * Unschedule the email notice event.
-     */
-    function unschedule_email_notice_hook() {
-        wp_clear_scheduled_hook( 'cronicle_email_notice_hook' );
-    }
-
-
-
-
-
-/**
- * Returns the timestamp in the blog's time and format.
- */
 function cronicle_get_datestring( $timestamp = '' )
 {
     if ( empty($timestamp) ) {
@@ -472,41 +347,7 @@ function cronicle_option( $name, $default = false )
     return $ret;
 }
 
-/**
- * Email the user if the results for the general WP Cron system is bad
- */
-function cronicle_notify_user( $result, $forced )
-{
-    
-    if ( !$forced && is_wp_error( $result ) && $result->get_error_code() != 'cronicle_notice' ) {
-        $last_emailed = get_option( '_cronicle_last_emailed', 0 );
-        $email_frequency = (int) cronicle_option( 'email_frequency', 86400 );
-        if ( !$forced && $last_emailed > time() - $email_frequency ) {
-            return;
-        }
-        
 
-        
-        $email_address = cronicle_get_email_address();
-        
-        if ( !empty($email_address) ) {
-            $msg = get_option( 'cronicle_status' );
-            $msg .= sprintf( __( '<p style="font-size:.9em;">This message has been sent from %s by the WP-Cron Status Checker plugin.  You can change the email address in your WordPress admin section under Settings -> WP Cron Status.  Only one email will be mailed every 24 hours.</p>', 'cronicle' ), site_url() );
-            $headers = array( ' Content-Type: text/html; charset=UTF-8' );
-            wp_mail(
-                $email_address,
-                get_bloginfo( 'name' ) . ' - ' . __( 'WP-Cron Cannot Run!', 'cronicle' ),
-                $msg,
-                $headers
-            );
-            update_option( '_cronicle_last_emailed', time() );
-        }
-    
-    }
-
-}
-
-add_action('cronicle_run_status','cronicle_notify_user', 10, 2);
 /**
  * Get the email address taking account the old settings.
  */
