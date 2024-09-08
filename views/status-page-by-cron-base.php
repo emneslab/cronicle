@@ -1,5 +1,8 @@
 <?php 
     foreach ( $cron_logs as $cron_key => $cron_log ) : 
+         $hook_names = array_column($cron_log['hooks'], 'hook_name');
+    
+
         $class_status = '';
         $title = '';
         $timestamp = round( (float)$cron_key );
@@ -42,7 +45,7 @@
 <div class="hook-container <?php echo $class_status; ?>">
     <div class="hook-top">
         <span type="button" class="toggle-indicator"></span>
-        <h3 class="hook-title"><span class="date"><?php echo date_i18n( get_option( 'date_format' ), $blogtime ); ?></span> <?php echo date_i18n( get_option( 'time_format' ), $blogtime ); ?>
+        <h3 class="hook-title"><span class="date"><?php echo date_i18n( get_option( 'date_format' ), $blogtime ); ?></span> <?php echo date_i18n( get_option( 'time_format' ), $blogtime ); ?> <br> <strong> Hooks: </strong><?php echo (implode(', ', $hook_names)) ; ?>
             <br><span class="subheader">Elapsed Time: <span class="subheader-value"><?php echo $elapsed_time; ?></span></span>
         </h3>
         <span class="status-icon" title="<?php echo esc_attr( $title ); ?>"></span>

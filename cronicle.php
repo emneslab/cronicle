@@ -121,8 +121,8 @@ if ( !defined( 'ABSPATH' ) ) {
     {
         global  $wpdb ;
         $tables = array_merge( $tables, array(
-            CRONICLE::table_name(),
-            CRONICLE_Error_Logs::table_name()
+            'wp_cronicle_logs',
+            'wp_cronicle_error_logs'
         ) );
         return $tables;
     }
@@ -199,12 +199,7 @@ if ( !defined( 'ABSPATH' ) ) {
     
     }
     
-    add_action(
-        'cronicle_run_status',
-        'cronicle_notify_user',
-        10,
-        2
-    );
+    add_action('cronicle_run_status','cronicle_notify_user', 10, 2);
     /**
      * Get the email address taking account the old settings.
      */
@@ -301,8 +296,8 @@ function cronicle_setup_tables() {
     global $wpdb;
     require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
 
-    $table_name = CRONICLE::table_name();
-    $sql = "CREATE TABLE " . $table_name . " (
+ 
+    $sql = "CREATE TABLE wp_cronicle_logs (
         id BIGINT(20) unsigned NOT NULL AUTO_INCREMENT,
         cron_key varchar(255) NOT NULL,
         hook_name varchar(255) NOT NULL,
@@ -317,8 +312,8 @@ function cronicle_setup_tables() {
         ENGINE = innodb;";
     dbDelta($sql);
 
-    $table_name = CRONICLE_Error_Logs::table_name();
-    $sql = "CREATE TABLE " . $table_name . " (
+    
+    $sql = "CREATE TABLE wp_cronicle_error_logs (
         id BIGINT(20) unsigned NOT NULL AUTO_INCREMENT,
         cron_key varchar(255) NOT NULL,
         hook_name varchar(255) NULL,
@@ -338,11 +333,11 @@ function cronicle_setup_tables() {
 function cronicle_destroy_tables() {
     global $wpdb;
 
-    $table_name = CRONICLE::table_name();
-    $wpdb->query( 'DROP TABLE IF EXISTS ' . $table_name );
+   
+    $wpdb->query( 'DROP TABLE IF EXISTS wp_cronicle_logs' );
 
-    $table_name = CRONICLE_Error_Logs::table_name();
-    $wpdb->query( 'DROP TABLE IF EXISTS ' . $table_name );
+    
+    $wpdb->query( 'DROP TABLE IF EXISTS wp_cronicle_error_logs' );
 }
 
 
@@ -383,6 +378,7 @@ function cronicle_run( $forced = false ) {
 
     do_action( 'cronicle_run_status', $result, $forced );
 }
+
 add_action( 'init', 'cronicle_run' );
 
 /**
@@ -393,39 +389,67 @@ add_action( 'init', 'cronicle_run' );
 function cronicle_test_cron_spawn() {
     global $wp_version;
 
-    if ( defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON ) {
-        return new WP_Error( 'cronicle_notice', sprintf( __( 'The DISABLE_WP_CRON constant is set to true as of %s. WP-Cron is disabled and will not run on it\'s own.', 'cronicle' ), current_time( 'm/d/Y g:i:s a' ) ) );
+    // Ensure WP-Cron constants are defined if not already.
+    defined( 'DISABLE_WP_CRON' ) || define( 'DISABLE_WP_CRON', false );
+    defined( 'ALTERNATE_WP_CRON' ) || define( 'ALTERNATE_WP_CRON', false );
+
+    // Check if WP-Cron is disabled.
+    if ( DISABLE_WP_CRON ) {
+        return new WP_Error(
+            'cronicle_notice',
+            sprintf(
+                __( 'WP-Cron has been disabled since %s. It will not run automatically as DISABLE_WP_CRON is set to true.', 'cronicle' ),
+                current_time( 'm/d/Y g:i:s a' )
+            )
+        );
     }
 
-    if ( defined( 'ALTERNATE_WP_CRON' ) && ALTERNATE_WP_CRON ) {
-        return new WP_Error( 'cronicle_notice', sprintf( __( 'The ALTERNATE_WP_CRON constant is set to true as of %s.  This plugin cannot determine the status of your WP-Cron system.', 'cronicle' ), current_time( 'm/d/Y g:i:s a' ) ) );
+    // Check if alternate WP-Cron is active.
+    if ( ALTERNATE_WP_CRON ) {
+        return new WP_Error(
+            'cronicle_notice',
+            sprintf(
+                __( 'Unable to determine WP-Cron status. ALTERNATE_WP_CRON has been active since %s.', 'cronicle' ),
+                current_time( 'm/d/Y g:i:s a' )
+            )
+        );
     }
 
-    $sslverify     = version_compare( $wp_version, 4.0, '<' );
+    $sslverify = version_compare( $wp_version, '4.0', '<' );
     $doing_wp_cron = sprintf( '%.22F', microtime( true ) );
 
-    $cron_request = apply_filters( 'cron_request', array(
+    // Build the cron request array with filters applied.
+    $cron_request = apply_filters( 'cron_request', [
         'url'  => site_url( 'wp-cron.php?doing_wp_cron=' . $doing_wp_cron ),
         'key'  => $doing_wp_cron,
-        'args' => array(
+        'args' => [
             'timeout'   => 3,
             'blocking'  => true,
             'sslverify' => apply_filters( 'https_local_ssl_verify', $sslverify ),
-        ),
-    ) );
+        ],
+    ]);
 
+    // Ensure blocking is true for this request.
     $cron_request['args']['blocking'] = true;
+
+    // Execute the remote post request.
     $result = wp_remote_post( $cron_request['url'], $cron_request['args'] );
 
+    // Handle possible errors or unexpected HTTP response codes.
     if ( is_wp_error( $result ) ) {
         return $result;
-    } else if ( wp_remote_retrieve_response_code( $result ) >= 300 ) {
-        return new WP_Error( 'unexpected_http_response_code', sprintf(
-            __( 'Unexpected HTTP response code: %s', 'wp-crontrol' ),
-            intval( wp_remote_retrieve_response_code( $result ) )
-        ) );
     }
 
+    $response_code = wp_remote_retrieve_response_code( $result );
+    if ( $response_code >= 300 ) {
+        return new WP_Error( 
+            'unexpected_http_response_code',
+            sprintf(
+                 __( 'Unexpected HTTP response code: %s', 'wp-crontrol' ), 
+                intval( $response_code ) 
+            )
+        );
+    }
 }
 
 
@@ -660,6 +684,7 @@ if ( defined( 'CRONICLE_DEBUG_CRON_EVENT' ) && CRONICLE_DEBUG_CRON_EVENT ) {
     function cronicle_debug_cron() {
         // global $wpdb;
         do_action( 'wp_log_debug', 'cronicle_debug_cron', 1 );
+        sleep(1);
         //$wpdb->hello();
         do_action( 'wp_log_debug', 'cronicle_debug_cron2', 'results' );
     }

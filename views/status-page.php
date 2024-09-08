@@ -54,6 +54,13 @@ function cronicle_status_page() {
             </div>
 
             <?php
+
+           // dump(\Emneslab\ORM\Support\Facades\DB::table('cronicle_logs')->get()->toArray());
+            //dump(\Emneslab\ORM\Support\Facades\DB::table('cronicle_error_logs')->get()->toArray());
+
+
+
+
             /*
             $lock =  get_transient( 'doing_cron' );
             dump($lock);

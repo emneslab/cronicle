@@ -7,10 +7,7 @@ class CRONICLE_Error_Logs {
     /**
      * Return the table name.
      */
-    public static function table_name() {
-        global $table_prefix;
-        return $table_prefix . 'cronicle_error_logs';
-    }
+
 
     /**
      * add logs
@@ -20,7 +17,7 @@ class CRONICLE_Error_Logs {
 
         $num = $wpdb->get_var( $wpdb->prepare( "
             select count(*) 
-            from " . self::table_name() . " 
+            from wp_cronicle_error_logs
             where ( cron_key = %s ) and ( hook_name = %s )
         ", $cron_key, $hook_name ) );
         if ( $num > 0 ) {
@@ -28,7 +25,7 @@ class CRONICLE_Error_Logs {
         }
 
         $wpdb->insert( 
-            self::table_name(),
+            'wp_cronicle_error_logs',
             array( 
                 'cron_key'  => $cron_key, 
                 'hook_name' => $hook_name
@@ -42,7 +39,7 @@ class CRONICLE_Error_Logs {
      */
     public static function get_errors() {
         global $wpdb;
-        $results = $wpdb->get_results( "select * from " . self::table_name() . " where ( sent_date IS NULL )", ARRAY_A );
+        $results = $wpdb->get_results( "select * from wp_cronicle_error_logs where ( sent_date IS NULL )", ARRAY_A );
         $ret = array();
         foreach ( $results as $row ) {
             if ( empty( $ret[$row['cron_key']] ) ) {
@@ -67,7 +64,7 @@ class CRONICLE_Error_Logs {
             return "'" . esc_sql( $v ) . "'";
         }, $cron_keys);
         $cron_keys = implode( ',', $cron_keys );
-        $wpdb->query( $wpdb->prepare( "update " . self::table_name() . " SET sent_date = %s where ( cron_key IN( " . $cron_keys . " ) )", current_time( 'mysql', 1 ) ) );
+        $wpdb->query( $wpdb->prepare( "update wp_cronicle_error_logs SET sent_date = %s where ( cron_key IN( " . $cron_keys . " ) )", current_time( 'mysql', 1 ) ) );
     }
 
     /**
@@ -84,6 +81,6 @@ class CRONICLE_Error_Logs {
         else {
             $where = "( cron_key < $expire_time )";
         }
-        $wpdb->query( "delete from " . self::table_name() . " where " . $where );
+        $wpdb->query( "delete from wp_cronicle_error_logs where " . $where );
     }
 }

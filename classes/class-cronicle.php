@@ -17,13 +17,8 @@ class CRONICLE {
     const RESULT_FAILED = 'failed';
     const RESULT_INCOMPLETE = 'incomplete'; // derived, not stored.
 
-    /**
-     * Return the table name.
-     */
-    public static function table_name() {
-        global $table_prefix;
-        return $table_prefix . 'cronicle_logs';
-    }
+
+    
 
     /**
      * Log the time for the start of the hook.
@@ -44,8 +39,8 @@ class CRONICLE {
      */
     public static function clear_logs() {
         global $wpdb;
-        $wpdb->query( "delete from " . CRONICLE::table_name() );
-        $wpdb->query( "delete from " . CRONICLE_Error_Logs::table_name() );
+        $wpdb->query( "delete from wp_cronicle_logs" );
+        $wpdb->query( "delete from wp_cronicle_error_logs" );
     }
 
     /**
@@ -64,7 +59,7 @@ class CRONICLE {
         return $wpdb->get_col( 
             $wpdb->prepare( "
                 select distinct hook_name 
-                from " . CRONICLE::table_name() . " 
+                from wp_cronicle_logs 
                 where ( cron_key = %s )
                   and ( `end` IS NULL )
                 " . $where_hooks . "
@@ -91,7 +86,7 @@ class CRONICLE {
                 $format[] = '%s';
             }
             $wpdb->insert( 
-                CRONICLE::table_name(),
+                'wp_cronicle_logs',
                 $params, 
                 $format
             );
@@ -101,7 +96,7 @@ class CRONICLE {
             // if end is 0 it means we are already logged it and not keeping track of elapsed time.
             $log_id = $wpdb->get_var( 
                 $wpdb->prepare( "
-                    select id from " . CRONICLE::table_name() . " 
+                    select id from wp_cronicle_logs 
                     where ( cron_key = %s ) 
                       and ( hook_name = %s )
                       and ( `end` is null )
@@ -121,7 +116,7 @@ class CRONICLE {
                 $formats[] = '%s';
             }
             $wpdb->update(
-                CRONICLE::table_name(),
+                'wp_cronicle_logs',
                 $params,
                 array( 'id' => $log_id ),
                 $formats,
@@ -131,7 +126,7 @@ class CRONICLE {
 
         if ( $key !== 'start' && $log_lifespan === 0 ) {
             // ending, and also don't keep the log
-            $wpdb->delete( CRONICLE::table_name(), array( 'id' => $log_id ) );
+            $wpdb->delete( 'wp_cronicle_logs', array( 'id' => $log_id ) );
         }
     }
 
@@ -467,9 +462,9 @@ class CRONICLE {
             $where = '';
 
         $wpdb->query( "
-            delete t.* from " . CRONICLE::table_name() . " as t
+            delete t.* from wp_cronicle_logs as t
             " . $join . "
-            left outer join ( select distinct cron_key from " . CRONICLE_Error_Logs::table_name() . " ) as err
+            left outer join ( select distinct cron_key from wp_cronicle_error_logs ) as err
               on ( err.cron_key = t.cron_key )
             where ( ( t.cron_key < $expire_time ) and ( err.cron_key is null ) )
             " . $where . "
@@ -482,7 +477,7 @@ class CRONICLE {
                     select last_run.hook_name 
                     from (
                         select hook_name, max( cron_key ) as max_cron_key
-                        from " . CRONICLE::table_name() . "
+                        from wp_cronicle_logs
                         group by hook_name
                     ) as last_run
                     where ( last_run.max_cron_key < $time_last_week ) ", ARRAY_A);
@@ -501,7 +496,7 @@ class CRONICLE {
                     $to_delete[] = sanitize_key( $row['hook_name'] );
                 }
                 if ( !empty( $to_delete ) ) {
-                    $wpdb->query( "delete from " . CRONICLE::table_name() . " where hook_name IN ('" . implode("', '", $to_delete ) . "')" );
+                    $wpdb->query( "delete from wp_cronicle_logs where hook_name IN ('" . implode("', '", $to_delete ) . "')" );
                 }
             }
         
@@ -520,7 +515,7 @@ class CRONICLE {
         $in_str = implode( ',', $non_error_result );
         // any logs that have no end date or result is some kind of error message
         $open_logs = $wpdb->get_results( "
-            select * from " . CRONICLE::table_name() . " 
+            select * from wp_cronicle_logs 
             where ( 
                     ( end IS NULL ) 
                  or ( 
@@ -744,7 +739,7 @@ class CRONICLE {
         $expire_time = strtotime( '-' . $log_lifespan . ' seconds' );
         $results = $wpdb->get_results( "
             select t.* 
-            from " . CRONICLE::table_name() . " as t
+            from wp_cronicle_logs as t
             " . self::get_limits_query() . "
             where ( t.cron_key > $expire_time )
         ", ARRAY_A );
@@ -759,8 +754,8 @@ class CRONICLE {
         global $wpdb;
         return $wpdb->get_results( "
             select t.* 
-            from " . CRONICLE::table_name() . " as t
-            inner join ( select distinct cron_key from " . CRONICLE_Error_Logs::table_name() . " ) as err
+            from wp_cronicle_logs as t
+            inner join ( select distinct cron_key from wp_cronicle_error_logs ) as err
               on ( err.cron_key = t.cron_key )
         ", ARRAY_A );
     }
