@@ -82,7 +82,7 @@ function cronicle_test_cron_spawn() {
 }
 
 
-if ( defined( 'DOING_CRON' ) && DOING_CRON ) :
+if ( defined( 'DOING_CRON' ) && DOING_CRON ) {
 
     /**
      * Set the time for cronicle_last_run.
@@ -270,11 +270,11 @@ if ( defined( 'DOING_CRON' ) && DOING_CRON ) :
 
         return $results;
     }
-endif; 
+}
 
 
-define( 'CRONICLE_DEBUG_CRON_EVENT', 1 );
-if ( defined( 'CRONICLE_DEBUG_CRON_EVENT' ) && CRONICLE_DEBUG_CRON_EVENT ) :
+
+if ( defined( 'CRONICLE_DEBUG_CRON_EVENT' ) && CRONICLE_DEBUG_CRON_EVENT ) {
     
     /**
      * schedules the event on activation
@@ -313,9 +313,9 @@ if ( defined( 'CRONICLE_DEBUG_CRON_EVENT' ) && CRONICLE_DEBUG_CRON_EVENT ) :
     function cronicle_debug_cron() {
         // global $wpdb;
         do_action( 'wp_log_debug', 'cronicle_debug_cron', 1 );
-        $wpdb->hello();
+        //$wpdb->hello();
         do_action( 'wp_log_debug', 'cronicle_debug_cron2', 'results' );
     }
     add_action( 'cronicle_debug_event', 'cronicle_debug_cron', 99 );
 
-endif;
+}

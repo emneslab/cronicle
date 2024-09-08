@@ -53,6 +53,66 @@ function cronicle_status_page() {
                 <a href="#" data-view="hooks-errors">View Uncompleted by Hooks</a>
             </div>
 
+            <?php
+            /*
+            $lock =  get_transient( 'doing_cron' );
+            dump($lock);
+
+            global $wpdb;
+            $results = $wpdb->get_results("SHOW TABLES", ARRAY_N);
+            dump($results);
+            $results = $wpdb->get_results( "SELECT * FROM wp_cronicle_logs", ARRAY_A );
+            dump($results);
+            $results = $wpdb->get_results( "SELECT * FROM wp_cronicle_error_logs", ARRAY_A );
+            dump($results);
+
+            $crons = _get_cron_array();
+
+            dump($crons);
+            $schedules = wp_get_schedules();
+            dump($schedules);
+
+   
+
+
+
+                // Get the cron array
+                $crons = _get_cron_array();
+            
+                // Check if there are any cron events
+                if ( empty( $crons ) ) {
+                    echo 'No cron jobs are registered.';
+                    return;
+                }
+            
+                // Array to store all the cron hooks
+                $cron_hooks = [];
+            
+                // Loop through each cron job
+                foreach ( $crons as $timestamp => $cron ) {
+            dump($timestamp);
+            dump($cron);
+
+                    foreach ( $cron as $hook => $data ) {
+            dump($data);
+
+                        if ( !in_array( $hook, $cron_hooks ) ) {
+                            $cron_hooks[] = $hook;
+                        }
+                    }
+                }
+            
+            dump($cron_hooks);
+                
+
+
+
+*/
+
+
+            ?>
+
+
             <div class="status-view status-by-cron current">
                 <?php require_once( 'status-page-by-cron.php' ); ?>
             </div>

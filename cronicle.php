@@ -13,13 +13,13 @@ define( 'CRONICLE_PLUGIN', __FILE__ );
 define( 'CRONICLE_DIR', dirname( CRONICLE_PLUGIN ) );
 define( 'CRONICLE_OPTIONS_NAME', 'cronicle_options' );
 define( 'CRONICLE_OPTIONS_PAGE_ID', 'cronicle-options' );
-// used to disable the new monitoring feature.  can remove this and references to it later.
+define( 'CRONICLE_DEBUG_CRON_EVENT', 1 );
 define( 'CRONICLE_ENABLE_MONITORING', true );
 define( 'CRONICLE_DEFAULT_LOG_LIFESPAN', 86400 );
 define( 'CRONICLE_PLUGIN_WEBSITE', 'https://webheadcoder.com/wp-cron-status-checker' );
+require 'vendor/autoload.php';
 require_once CRONICLE_DIR . '/classes/class-cronicle.php';
 require_once CRONICLE_DIR . '/classes/class-error-log.php';
-require_once CRONICLE_DIR . '/inc/tables.php';
 require_once CRONICLE_DIR . '/inc/cron-checker.php';
 require_once CRONICLE_DIR . '/views/dashboard.php';
 require_once CRONICLE_DIR . '/views/status-page.php';
@@ -119,9 +119,13 @@ if ( !defined( 'ABSPATH' ) ) {
     function cronicle_on_delete_blog( $tables )
     {
         global  $wpdb ;
-        $tables = array_merge( $tables, cronicle_table_names() );
+        $tables = array_merge( $tables, array(
+            CRONICLE::table_name(),
+            CRONICLE_Error_Logs::table_name()
+        ) );
         return $tables;
     }
+
     
     add_filter( 'wpmu_drop_tables', 'cronicle_on_delete_blog' );
     /**
@@ -287,3 +291,55 @@ if ( !defined( 'ABSPATH' ) ) {
         return $lifespans;
     }
 
+
+
+    /**
+ * Set up the sql tables.
+ */
+function cronicle_setup_tables() {
+    global $wpdb;
+    require_once( ABSPATH . 'wp-admin/includes/upgrade.php' );
+
+    $table_name = CRONICLE::table_name();
+    $sql = "CREATE TABLE " . $table_name . " (
+        id BIGINT(20) unsigned NOT NULL AUTO_INCREMENT,
+        cron_key varchar(255) NOT NULL,
+        hook_name varchar(255) NOT NULL,
+        start BIGINT(20) NOT NULL,
+        end BIGINT(20) NULL,
+        result TEXT NULL,
+        PRIMARY KEY  (id),
+        KEY cron_key (cron_key),
+        KEY cron_key_hook_name (cron_key, hook_name),
+        KEY `result_hook_name` (`result`(255), `hook_name`(255))
+        )
+        ENGINE = innodb;";
+    dbDelta($sql);
+
+    $table_name = CRONICLE_Error_Logs::table_name();
+    $sql = "CREATE TABLE " . $table_name . " (
+        id BIGINT(20) unsigned NOT NULL AUTO_INCREMENT,
+        cron_key varchar(255) NOT NULL,
+        hook_name varchar(255) NULL,
+        sent_date DATETIME NULL,
+        PRIMARY KEY  (id),
+        KEY cron_key (cron_key)
+        )
+        ENGINE = innodb;";
+    dbDelta($sql);
+
+    update_option( '_cronicle_version', CRONICLE_VERSION );
+}
+
+/**
+ * Drop the tables.
+ */
+function cronicle_destroy_tables() {
+    global $wpdb;
+
+    $table_name = CRONICLE::table_name();
+    $wpdb->query( 'DROP TABLE IF EXISTS ' . $table_name );
+
+    $table_name = CRONICLE_Error_Logs::table_name();
+    $wpdb->query( 'DROP TABLE IF EXISTS ' . $table_name );
+}

@@ -1,0 +1,17 @@
+{
+    "name": "emneslab/cronicle",
+    "autoload": {
+        "psr-4": {
+            "Emneslab\\Cronicle\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Emnes Lab",
+            "email": "lab@emnes.co"
+        }
+    ],
+    "require": {
+        "symfony/var-dumper": "^7.1"
+    }
+}
