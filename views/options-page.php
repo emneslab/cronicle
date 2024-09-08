@@ -241,6 +241,18 @@ function cronicle_options_do_page() {
     <?php 
 }
 
+    /**
+     * Clear all the logs
+     */
+     function clear_logs() {
+        global $wpdb;
+        $wpdb->query( "delete from wp_cronicle_logs" );
+        $wpdb->query( "delete from wp_cronicle_error_logs" );
+    }
+
+
+
+
 /**
  * Sanitize and validate input. Accepts an array, return a sanitized array.
  */
@@ -249,7 +261,7 @@ function cronicle_options_validate($input) {
 
     // clear logs when no logs should be kept
     if ( isset( $input['log_lifespan'] ) && $input['log_lifespan'] == 0 ) {
-        CRONICLE::clear_logs();
+        clear_logs();
     }
 
     if ( !isset( $input['incomplete_not_error'] ) ) {
@@ -300,7 +312,7 @@ function cronicle_maybe_clear_logs() {
             $args = array(
                 'cronicle_message' => '1'
             );
-            CRONICLE::clear_logs();
+            clear_logs();
             wp_safe_redirect( add_query_arg( $args, menu_page_url( CRONICLE_OPTIONS_PAGE_ID, false ) ) );
         }
     }
@@ -317,24 +329,4 @@ function cronicle_removable_query_args( $args ) {
     ) );
 }
 add_filter( 'removable_query_args', 'cronicle_removable_query_args' );
-
-/**
- * Update the scheduled job when settings change.  used for both adding and updating.
- */
-function cronicle_options_updated( $option_name, $old_value, $new_value = array() ) {
-    if ( $option_name != CRONICLE_OPTIONS_NAME) {
-        return;
-    }
-    if ( !is_array( $old_value ) || !is_array( $new_value ) ) {
-        return;
-    }
-    $freq1 = !empty( $old_value['email_frequency'] ) ? $old_value['email_frequency'] : 0;
-    $freq2 = !empty( $new_value['email_frequency'] ) ? $new_value['email_frequency'] : 0;
-    if ( $freq1 == $freq2 ) {
-        return;
-    }
-
-    CRONICLE::unschedule_email_notice_hook();
-    CRONICLE::schedule_email_notice_hook();
-}
 

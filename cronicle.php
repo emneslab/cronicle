@@ -28,12 +28,290 @@ require_once CRONICLE_DIR . '/views/options-page.php';
 register_activation_hook( CRONICLE_PLUGIN, 'cronicle_activation' );
 register_deactivation_hook( CRONICLE_PLUGIN, 'cronicle_deactivation' );
 
-add_action( 'cronicle_clean_up', array( 'CRONICLE', 'cleanup' ) );
-add_action( 'cronicle_email_notice_hook', array( 'CRONICLE', 'notify_user' ) );
+add_action( 'cronicle_clean_up',  'cleanup'  );
+add_action( 'cronicle_email_notice_hook', 'notify_user' );
 
 if ( !defined( 'DOING_CRON' ) || !DOING_CRON ) {
-    add_action( 'init', array( 'CRONICLE', 'check_cron_completion' ) );
+    add_action( 'init', 'check_cron_completion'  );
 }
+
+
+    /**
+     * return the inner join for querying logs.
+     */
+     function get_limits_query( $outer = false ) {
+        
+        return '';
+   
+}
+    /**
+     * Delete all cron logs that haven't run in more than a week.
+     */
+     function cleanup() {
+        global $wpdb;
+        $log_lifespan = CRONICLE::get_log_lifespan();
+        $expire_time = strtotime( '-' . $log_lifespan . ' seconds' );
+        $join = get_limits_query( true );
+        $where = " or ( ( l.cron_key is null ) and err.cron_key is null )";
+
+            $join = '';
+            $where = '';
+
+        $wpdb->query( "
+            delete t.* from wp_cronicle_logs as t
+            " . $join . "
+            left outer join ( select distinct cron_key from wp_cronicle_error_logs ) as err
+              on ( err.cron_key = t.cron_key )
+            where ( ( t.cron_key < $expire_time ) and ( err.cron_key is null ) )
+            " . $where . "
+        " );
+
+            if ( intval( $log_lifespan ) >= 604800 ) {
+                $time_last_week = strtotime( '-1 week' );
+                // get old crons
+                $results = $wpdb->get_results( "
+                    select last_run.hook_name 
+                    from (
+                        select hook_name, max( cron_key ) as max_cron_key
+                        from wp_cronicle_logs
+                        group by hook_name
+                    ) as last_run
+                    where ( last_run.max_cron_key < $time_last_week ) ", ARRAY_A);
+
+                if ( empty( $results ) ) {
+                    return;
+                }
+
+                $crons = get_cron_tasks();
+                $hooks = array_column( $crons, 'hook' );
+                $to_delete = array();
+                foreach ( $results as $row ) {
+                    if ( in_array( $row['hook_name'], $hooks ) ) {
+                        continue;
+                    }
+                    $to_delete[] = sanitize_key( $row['hook_name'] );
+                }
+                if ( !empty( $to_delete ) ) {
+                    $wpdb->query( "delete from wp_cronicle_logs where hook_name IN ('" . implode("', '", $to_delete ) . "')" );
+                }
+            }
+        
+        CRONICLE_Error_Logs::clear_all_sent();
+    }
+
+
+
+
+    /**
+     * Populate our list of cron events and store them to a class-wide variable.
+     * From WP_Site_Health 5.2.0
+     */
+    function get_cron_tasks() {
+        $cron_tasks = _get_cron_array();
+
+        if ( empty( $cron_tasks ) ) {
+            $crons = new WP_Error( 'no_tasks', __( 'No scheduled events exist on this site.' ) );
+            return;
+        }
+
+        $crons = array();
+
+        foreach ( $cron_tasks as $time => $cron ) {
+            foreach ( $cron as $hook => $dings ) {
+                foreach ( $dings as $sig => $data ) {
+
+                    $crons[ "$hook-$sig-$time" ] = (object) array(
+                        'hook'     => $hook,
+                        'time'     => $time,
+                        'sig'      => $sig,
+                        'args'     => $data['args'],
+                        'schedule' => $data['schedule'],
+                        'interval' => isset( $data['interval'] ) ? $data['interval'] : null,
+                    );
+
+                }
+            }
+        }
+        return $crons;
+    }
+
+
+
+
+
+
+
+
+
+    /**
+     * Return an array for display
+     */
+     function check_cron_completion() {
+        global $wpdb;
+        $last_checked = get_option( '_cronicle_last_error_check', 0 );
+        $non_error_result = array_map( function( $v ) {
+            return "'" . esc_sql( $v ) . "'";
+        }, ['skipped', 'completed', 'exited', 'in progress'] );
+        $in_str = implode( ',', $non_error_result );
+        // any logs that have no end date or result is some kind of error message
+        $open_logs = $wpdb->get_results( "
+            select * from wp_cronicle_logs 
+            where ( 
+                    ( end IS NULL ) 
+                 or ( 
+                      ( coalesce( result, '' ) != '' )
+                  and ( result NOT IN ( " . $in_str . " ) ) 
+                  )
+              )
+              and ( start > " . ( ( $last_checked - 300 ) * 10000 ) . " )
+              and ( hook_name != 'cronicle_wp_cron' )
+            ", ARRAY_A );
+        if ( empty( $open_logs ) ) {
+            return;
+        }
+        // this gets called on each page load.  So anything within the last 12 hours will get found.
+        $now = time();
+        $incomplete_not_error = cronicle_is_incomplete_an_error();
+        $cron_logs = array_filter( $open_logs, function( $row ) use ( $now ) {
+            $include = true;
+            if ( empty( $row['end'] ) ) {
+                if ( cronicle_is_incomplete_an_error( $row['hook_name'] ) ) {
+                    $run_time = round( $row['cron_key'] );
+                    $include = ( ( $run_time + 300 ) < $now );
+                }
+                else {
+                    $include = false;
+                }
+            }
+            return $include;
+        } );
+        foreach ( $cron_logs as $row ) {
+            CRONICLE_Error_Logs::add_error( $row['cron_key'], $row['hook_name'] );
+        }
+        update_option( '_cronicle_last_error_check', time() );
+    }
+
+
+
+
+
+
+
+
+
+
+
+    /**
+     * Email the user if the results for the general WP Cron system is bad
+     */
+     function notify_user() {
+        $errors = CRONICLE_Error_Logs::get_errors();
+        if ( empty( $errors ) ) {
+            return;
+        }
+
+        $email_address = cronicle_get_email_address();
+        if ( empty( $email_address ) ) {
+            return;
+        }
+        $time_in_minutes = 300 / 60;
+        $minutes = sprintf( _n( '%s minute', '%s minutes', $time_in_minutes, 'cronicle' ), $time_in_minutes );
+
+        $msg = '<p>';
+        $msg .= __( 'WP-Cron started but failed to complete.  Normally a failure here or there is not something to be concerned about.  You may want to look into the failures if they happen fairly consistently.' );
+        $msg .= '</p><p>';
+        $msg .= sprintf( __( 'The reason for a failed cron could be one of many factors.  It could indicate a coding error due to a plugin or conflict of plugins, it could indicate your server ran out of resources, or it could just mean the event did not finish within %s' ), $minutes );
+        $msg .= '</p>';
+
+        $msg .= '<p>' . sprintf( __( 'The following hooks failed to complete.  This can also be seen in the Tools -> WP Cron Status page on %s' ), site_url() ) . '</p>';
+        $msg .= '<ul>';
+        foreach ( $errors as $cron_key => $hook_names ) {
+            $time = round( $cron_key );
+            $msg .= '<li>' . date_i18n( 'm/d/Y h:ia', utc_to_blogtime( $time ) );
+            $msg .= '<ul>';
+            foreach ( $hook_names as $hook_name ) {
+                if ( $hook_name == 'cronicle_wp_cron' ) {
+                    continue;
+                }
+                $msg .= '<li>' . esc_html( $hook_name ) . '</li>';
+            }
+            $msg .= '</ul></li>';
+        }
+        $msg .= '</ul>';
+
+        $msg .= sprintf( __( '<p>This message has been sent from %s by the WP-Cron Status Checker plugin.  You can change the email address in your WordPress admin section under Settings -> WP Cron Status.</p>', 'cronicle' ), site_url() );
+        $headers = array(' Content-Type: text/html; charset=UTF-8' );
+
+        wp_mail( $email_address, 
+            get_bloginfo( 'name' ) . ' - ' . __( 'WP-Cron Failed to Complete!', 'cronicle' ),
+            $msg,
+            $headers );
+        CRONICLE_Error_Logs::mark_errors_sent( array_keys( $errors ) );
+    }
+
+
+
+
+    /**
+     * Return a timestamp in the blog's timezone give a timestamp from UTC 
+     */
+    function utc_to_blogtime( $timestamp ) {
+        $timestamp = (int) $timestamp;
+        try {
+            // get datetime object from unix timestamp
+            $datetime = new DateTime( "@{$timestamp}", new DateTimeZone( 'UTC' ) );
+         
+            // set the timezone to the site timezone
+            $datetime->setTimezone( new DateTimeZone( get_timezone_string() ) );
+         
+            // return the unix timestamp adjusted to reflect the site's timezone
+            return $timestamp + $datetime->getOffset();
+         
+        } catch ( Exception $e ) {
+             
+            // something broke
+            return 0;
+        }
+    }
+
+    /**
+     * Returns the timezone string for a site, even if it's set to a UTC offset
+     *
+     * @return string valid PHP timezone string
+     */
+     function get_timezone_string() {
+     
+        // if site timezone string exists, return it
+        if ( $timezone = get_option( 'timezone_string' ) )
+            return $timezone;
+     
+        // get UTC offset, if it isn't set then return UTC
+        if ( 0 === ( $utc_offset = get_option( 'gmt_offset', 0 ) ) )
+            return 'UTC';
+     
+        // adjust UTC offset from hours to seconds
+        $utc_offset *= 3600;
+     
+        // attempt to guess the timezone string from the UTC offset
+        $timezone = timezone_name_from_abbr( '', $utc_offset );
+     
+        // last try, guess timezone string manually
+        if ( false === $timezone ) {
+     
+            $is_dst = date( 'I' );
+     
+            foreach ( timezone_abbreviations_list() as $abbr ) {
+                foreach ( $abbr as $city ) {
+                    if ( $city['dst'] == $is_dst && $city['offset'] == $utc_offset )
+                        return $city['timezone_id'];
+                }
+            }
+        }
+     
+        // fallback to UTC
+        return 'UTC';
+    }
+
 
 
 
@@ -59,7 +337,7 @@ function cronicle_activation( $network_wide )
     
     $time = time();
     try {
-        $datetime = new DateTime( 'midnight', new DateTimeZone( CRONICLE::get_timezone_string() ) );
+        $datetime = new DateTime( 'midnight', new DateTimeZone( get_timezone_string() ) );
         $datetime->setTimezone( new DateTimeZone( 'UTC' ) );
         $time = $datetime->format( 'U' );
     } catch ( Exception $e ) {
@@ -67,7 +345,7 @@ function cronicle_activation( $network_wide )
     if ( !wp_next_scheduled( 'cronicle_clean_up' ) ) {
         wp_schedule_event( $time, 'twicedaily', 'cronicle_clean_up' );
     }
-    CRONICLE::schedule_email_notice_hook();
+    schedule_email_notice_hook();
 }
 
 /**
@@ -143,8 +421,29 @@ add_filter( 'wpmu_drop_tables', 'cronicle_on_delete_blog' );
 function cronicle_deactivation()
 {
     wp_clear_scheduled_hook( 'cronicle_clean_up' );
-    CRONICLE::unschedule_email_notice_hook();
+    unschedule_email_notice_hook();
 }
+
+
+    /**
+     * Schedule the email notice event.
+     */
+    function schedule_email_notice_hook() {
+        if (! wp_next_scheduled ( 'cronicle_email_notice_hook' )) {
+            wp_schedule_event( time(), 'cronicle_email_interval', 'cronicle_email_notice_hook' );
+        }
+    }
+
+    /**
+     * Unschedule the email notice event.
+     */
+    function unschedule_email_notice_hook() {
+        wp_clear_scheduled_hook( 'cronicle_email_notice_hook' );
+    }
+
+
+
+
 
 /**
  * Returns the timestamp in the blog's time and format.
@@ -489,7 +788,7 @@ if ( defined( 'DOING_CRON' ) && DOING_CRON ) {
                     $skipped_hooks[] = $hook;
                     // don't log elapsed time
                     CRONICLE::start_log( $hook );
-                    CRONICLE::end_log( $hook, false, CRONICLE::RESULT_SKIPPED );
+                    CRONICLE::end_log( $hook, false, 'skipped' );
                     continue;
                 }
 
@@ -502,7 +801,7 @@ if ( defined( 'DOING_CRON' ) && DOING_CRON ) {
                 );
                 add_action( $hook, 
                     function() use ( $hook ) {
-                        CRONICLE::end_log( $hook, true, CRONICLE::RESULT_COMPLETED );
+                        CRONICLE::end_log( $hook, true, 'completed' );
                     },
                     PHP_INT_MAX
                 );
@@ -514,7 +813,7 @@ if ( defined( 'DOING_CRON' ) && DOING_CRON ) {
 
             add_action( $last_hook, 
                 function() {
-                    CRONICLE::end_log( 'cronicle_wp_cron', true, CRONICLE::RESULT_COMPLETED );
+                    CRONICLE::end_log( 'cronicle_wp_cron', true, 'completed' );
                 },
                 PHP_INT_MAX
             );
@@ -522,7 +821,7 @@ if ( defined( 'DOING_CRON' ) && DOING_CRON ) {
         else if ( !empty( $skipped_hooks ) ) {
             // cron has only skipped hooks, so log with no elapsed time
             CRONICLE::start_log( 'cronicle_wp_cron' );
-            CRONICLE::end_log( 'cronicle_wp_cron', false, CRONICLE::RESULT_SKIPPED );
+            CRONICLE::end_log( 'cronicle_wp_cron', false, 'skipped' );
         }
 
     }
@@ -567,21 +866,47 @@ if ( defined( 'DOING_CRON' ) && DOING_CRON ) {
             $error_message = $last_error['message'];
         }
         if ( empty( $error_message ) ) {
-            $error_message = CRONICLE::RESULT_EXITED;
+            $error_message = 'exited';
         }
 
-        $hooks_in_progress = CRONICLE::get_hooks_in_progress( $cronicle_doing_cron_key );
+        $hooks_in_progress = get_hooks_in_progress( $cronicle_doing_cron_key );
 
         $skipped_hooks = array();
         foreach ( $hooks_in_progress as $hook_name ) {
             CRONICLE::end_log( $hook_name, true, $error_message );
             // should this be an option to mark exited crons as an error?
-            if ( $hook_name != 'cronicle_wp_cron' && $error_message != CRONICLE::RESULT_EXITED ) {
+            if ( $hook_name != 'cronicle_wp_cron' && $error_message != 'exited' ) {
                 CRONICLE_Error_Logs::add_error( $cronicle_doing_cron_key, $hook_name );
             }
         }
     }
     register_shutdown_function( 'cronicle_shutdown_handler' );
+
+
+    /**
+     * Get all running hook names with cron key
+     */
+    function get_hooks_in_progress( $cron_key, $hook_names = array() ) {
+        global $wpdb;
+        $where_hooks = '';
+        if ( !empty( $hook_names ) ) {
+            $hook_names = array_map( function( $v ) {
+                return "'" . esc_sql( $v ) . "'";
+            }, $hook_names);
+            $in_str = implode( ',', $hook_names );
+            $where_hooks = " and hook_name IN ( " . $in_str . " )";
+        }
+        return $wpdb->get_col( 
+            $wpdb->prepare( "
+                select distinct hook_name 
+                from wp_cronicle_logs 
+                where ( cron_key = %s )
+                  and ( `end` IS NULL )
+                " . $where_hooks . "
+            ", $cron_key
+        ) );
+    }
+
 
 
     /**

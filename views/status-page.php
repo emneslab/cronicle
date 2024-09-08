@@ -55,8 +55,8 @@ function cronicle_status_page() {
 
             <?php
 
-           // dump(\Emneslab\ORM\Support\Facades\DB::table('cronicle_logs')->get()->toArray());
-            //dump(\Emneslab\ORM\Support\Facades\DB::table('cronicle_error_logs')->get()->toArray());
+            dump(\Emneslab\ORM\Support\Facades\DB::table('cronicle_logs')->get()->toArray());
+            dump(\Emneslab\ORM\Support\Facades\DB::table('cronicle_error_logs')->get()->toArray());
 
 
 
