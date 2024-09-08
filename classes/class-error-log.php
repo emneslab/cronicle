@@ -4,10 +4,6 @@
  */
 class CRONICLE_Error_Logs {
 
-    /**
-     * Return the table name.
-     */
-
 
     /**
      * add logs
@@ -33,42 +29,4 @@ class CRONICLE_Error_Logs {
             array( '%s', '%s' )
         );
     }
-
-    /**
-     * Get all logs that haven't been sent unless $all = true.
-     */
-    public static function get_errors() {
-        global $wpdb;
-        $results = $wpdb->get_results( "select * from wp_cronicle_error_logs where ( sent_date IS NULL )", ARRAY_A );
-        $ret = array();
-        foreach ( $results as $row ) {
-            if ( empty( $ret[$row['cron_key']] ) ) {
-                $ret[$row['cron_key']] = array();
-            }
-            $ret[$row['cron_key']][] = $row['hook_name'];
-        }
-
-        return $ret;
-    }
-
-    /**
-     * Mark the errors with cron_keys as sent.
-     */
-    public static function mark_errors_sent( $cron_keys ) {
-        global $wpdb;
-
-        if ( empty( $cron_keys ) ) {
-            return;
-        }
-        $cron_keys = array_map( function( $v ) {
-            return "'" . esc_sql( $v ) . "'";
-        }, $cron_keys);
-        $cron_keys = implode( ',', $cron_keys );
-        $wpdb->query( $wpdb->prepare( "update wp_cronicle_error_logs SET sent_date = %s where ( cron_key IN( " . $cron_keys . " ) )", current_time( 'mysql', 1 ) ) );
-    }
-
-    /**
-     * Delete all the sent errors
-     */
-
 }

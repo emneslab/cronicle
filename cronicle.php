@@ -35,10 +35,12 @@ if ( !defined( 'DOING_CRON' ) || !DOING_CRON ) {
 }
 
 
+
+
     /**
      * return the inner join for querying logs.
      */
-     function get_limits_query( $outer = false ) {
+function get_limits_query( $outer = false ) {
         
         return '';
    
